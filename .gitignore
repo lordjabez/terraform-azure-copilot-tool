@@ -1,0 +1,7 @@
+.claude/settings.local.json
+.build/
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
