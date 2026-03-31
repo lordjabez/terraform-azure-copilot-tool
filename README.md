@@ -16,8 +16,8 @@ Resources provisioned:
 
 - **Resource Group** with a random suffix for global uniqueness
 - **Entra ID App Registration** with exposed API scope, service principal, client secret, and optional admin-consented delegated permissions
-- **Azure Container Registry** (Basic SKU, admin auth) for storing your Docker image
-- **Key Vault** (RBAC-authorized) for secrets: Entra client secret, ACR password, and any custom secrets
+- **Azure Container Registry** (Basic SKU, admin auth) for storing your Docker image -- or bring your own
+- **Key Vault** (RBAC-authorized) for secrets: Entra client secret, ACR password (when module-managed), and any custom secrets
 - **Storage Account** for Function App runtime and deployment package
 - **Function App** (Linux, Python 3.11, Consumption/Y1 plan) with Easy Auth and system-assigned managed identity
 - **Container Instance** (sync mode only) as a persistent always-on container
@@ -78,10 +78,33 @@ module "copilot_tool" {
       { id = "89fe6a52-be36-487e-b7d8-d061c450a026", value = "Sites.ReadWrite.All" },
     ]
   }
+
+  tags = {
+    environment = "dev"
+    team        = "platform"
+  }
 }
 ```
 
 The `delegated_permissions` variable configures which API permissions the app registration declares and gets admin consent for. The keys are resource application IDs (e.g., `00000003-0000-0000-c000-000000000000` for Microsoft Graph) and values are lists of permission objects with `id` and `value`. You can find permission IDs in the [Microsoft Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference).
+
+### Using an existing ACR
+
+To skip ACR creation and use an externally-managed registry, set all three `existing_acr_*` variables:
+
+```hcl
+module "copilot_tool" {
+  source = "github.com/lordjabez/terraform-azure-copilot-tool"
+
+  # ...
+
+  existing_acr_login_server   = "myregistry.azurecr.io"
+  existing_acr_admin_username = "myregistry"
+  existing_acr_admin_password = var.acr_password
+}
+```
+
+When using an existing ACR, the `acr_login_server` and `acr_name` outputs are `null`.
 
 ### 2. Deploy
 
@@ -96,8 +119,9 @@ terraform apply
 After apply, use the output values to push your image:
 
 ```bash
+ACR_NAME=$(terraform output -raw acr_name)
+az acr login --name "${ACR_NAME}"
 ACR_SERVER=$(terraform output -raw acr_login_server)
-az acr login --name "${ACR_SERVER%%.*}"
 docker tag my-tool:latest "${ACR_SERVER}/my-tool:latest"
 docker push "${ACR_SERVER}/my-tool:latest"
 ```
@@ -105,7 +129,7 @@ docker push "${ACR_SERVER}/my-tool:latest"
 Or build directly in ACR:
 
 ```bash
-az acr build -r "${ACR_SERVER%%.*}" -t my-tool:latest .
+az acr build -r "${ACR_NAME}" -t my-tool:latest .
 ```
 
 The `container_image` variable must match what you push (e.g., `<acr_server>/my-tool:latest`). If deploying for the first time, you'll need to push the image before `terraform apply` if using sync mode (the persistent container must pull the image at creation time), or you can apply first in async mode and push later.
@@ -130,7 +154,7 @@ In async mode, expect a 202 with a container group name. In sync mode, expect th
 | Variable | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `location` | `string` | yes | | Azure region (e.g., `eastus`) |
-| `project_name` | `string` | yes | | Resource name prefix. Lowercase alphanumeric + hyphens, 2-16 chars. |
+| `project_name` | `string` | yes | | Resource name prefix. Lowercase alphanumeric + hyphens, 2-15 chars. |
 | `execution_mode` | `string` | yes | | `async` or `sync` |
 | `container_image` | `string` | yes | | Full image reference including tag |
 | `obo_scopes` | `list(string)` | yes | | Scopes for OBO token exchange |
@@ -143,13 +167,18 @@ In async mode, expect a 202 with a container group name. In sync mode, expect th
 | `container_port` | `number` | no | `8080` | Port the container listens on (sync mode) |
 | `cleanup_threshold_hours` | `number` | no | `2` | Hours before terminated containers are cleaned up (async mode) |
 | `api_scope_name` | `string` | no | `access_as_user` | Name of the exposed API scope |
+| `existing_acr_login_server` | `string` | no | `null` | Login server of an existing ACR. Skips ACR creation. |
+| `existing_acr_admin_username` | `string` | no | `null` | Admin username for the existing ACR |
+| `existing_acr_admin_password` | `string` | no | `null` | Admin password for the existing ACR (sensitive) |
+| `tags` | `map(string)` | no | `{}` | Tags applied to all supported resources and ephemeral containers |
 
 ## Outputs
 
 | Output | Description |
 | --- | --- |
 | `function_url` | HTTPS endpoint (`/api/execute`) for the Copilot tool |
-| `acr_login_server` | ACR hostname for `docker push` |
+| `acr_login_server` | ACR hostname for `docker push` (null when using existing ACR) |
+| `acr_name` | ACR resource name for `az acr login` (null when using existing ACR) |
 | `app_registration_client_id` | Entra client ID for Copilot agent configuration |
 | `keyvault_name` | Key Vault name for managing secrets outside Terraform |
 
@@ -161,9 +190,11 @@ In async mode, expect a 202 with a container group name. In sync mode, expect th
 
 - **Client secret expiry**: The Entra client secret (`azuread_application_password`) expires after one year. To rotate, taint the resource and re-apply: `terraform taint module.copilot_tool.azuread_application_password.this && terraform apply`.
 
-- **ACR admin credentials**: The module uses ACR admin auth for simplicity. This works for low-volume scenarios. For production, consider switching to managed identity-based image pull.
+- **ACR admin credentials**: The module uses ACR admin auth for simplicity. This works for low-volume scenarios. For production, consider switching to managed identity-based image pull. You can also bring your own ACR via the `existing_acr_*` variables.
 
-- **Function deployment**: The Function code is zipped and uploaded to blob storage with a SAS URL. Changes to files in `function/` will trigger redeployment on the next `terraform apply` (the blob name includes an MD5 hash).
+- **Function deployment**: The Function code is zipped and uploaded to blob storage with a SAS URL. The SAS token has a 1-year lifetime and is regenerated on each `terraform apply`, but the Function app setting that references it uses `ignore_changes` so the URL only updates when the function code itself changes (detected via MD5 hash in the blob name).
+
+- **Tags**: The `tags` variable is merged onto all Azure resources that support tags. In async mode, tags are also applied to ephemeral ACI container groups (merged with the `created_at` timestamp tag used for cleanup).
 
 ## License
 

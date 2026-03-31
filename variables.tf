@@ -8,8 +8,8 @@ variable "project_name" {
   type        = string
 
   validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,14}[a-z0-9]$", var.project_name))
-    error_message = "Must be lowercase alphanumeric with hyphens, 2-16 characters, cannot start or end with a hyphen."
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,13}[a-z0-9]$", var.project_name))
+    error_message = "Must be lowercase alphanumeric with hyphens, 2-15 characters, cannot start or end with a hyphen."
   }
 }
 
@@ -89,4 +89,38 @@ variable "api_scope_name" {
   description = "Name of the exposed API scope on the Entra app registration"
   type        = string
   default     = "access_as_user"
+}
+
+variable "existing_acr_login_server" {
+  description = "Login server of an existing ACR. When set, the module skips ACR creation and uses this registry instead. All three existing_acr_* variables must be set together."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.existing_acr_login_server == null
+      ? true
+      : var.existing_acr_admin_username != null && var.existing_acr_admin_password != null
+    )
+    error_message = "When existing_acr_login_server is set, existing_acr_admin_username and existing_acr_admin_password must also be set."
+  }
+}
+
+variable "existing_acr_admin_username" {
+  description = "Admin username for the existing ACR"
+  type        = string
+  default     = null
+}
+
+variable "existing_acr_admin_password" {
+  description = "Admin password for the existing ACR"
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "tags" {
+  description = "Tags to apply to all supported resources"
+  type        = map(string)
+  default     = {}
 }

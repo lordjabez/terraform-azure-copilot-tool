@@ -4,8 +4,13 @@ output "function_url" {
 }
 
 output "acr_login_server" {
-  description = "ACR login server for docker push"
-  value       = azurerm_container_registry.this.login_server
+  description = "ACR login server for docker push (null when using an existing ACR)"
+  value       = local.create_acr ? azurerm_container_registry.this[0].login_server : null
+}
+
+output "acr_name" {
+  description = "ACR name for az acr login (null when using an existing ACR)"
+  value       = local.create_acr ? azurerm_container_registry.this[0].name : null
 }
 
 output "app_registration_client_id" {

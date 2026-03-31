@@ -11,9 +11,9 @@ provider "azuread" {}
 module "copilot_tool" {
   source = "../.."
 
-  location       = "eastus"
-  project_name   = "my-tool"
-  execution_mode = "async"
+  location        = "eastus"
+  project_name    = "my-tool"
+  execution_mode  = "async"
   container_image = "myacr.azurecr.io/my-tool:latest"
 
   obo_scopes = [
@@ -26,6 +26,11 @@ module "copilot_tool" {
       { id = "89fe6a52-be36-487e-b7d8-d061c450a026", value = "Sites.ReadWrite.All" },
     ]
   }
+
+  tags = {
+    environment = "dev"
+    team        = "platform"
+  }
 }
 
 output "function_url" {
@@ -34,6 +39,10 @@ output "function_url" {
 
 output "acr_login_server" {
   value = module.copilot_tool.acr_login_server
+}
+
+output "acr_name" {
+  value = module.copilot_tool.acr_name
 }
 
 output "app_registration_client_id" {

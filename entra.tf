@@ -69,6 +69,6 @@ resource "azuread_service_principal_delegated_permission_grant" "this" {
 }
 
 data "azuread_service_principal" "resource" {
-  for_each     = var.delegated_permissions
-  client_id    = each.key
+  for_each  = var.delegated_permissions
+  client_id = each.key
 }

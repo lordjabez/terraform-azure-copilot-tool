@@ -6,6 +6,12 @@ resource "azurerm_key_vault" "this" {
   sku_name                   = "standard"
   rbac_authorization_enabled = true
   purge_protection_enabled   = false
+  tags                       = var.tags
+
+  network_acls {
+    default_action = "Deny"
+    bypass         = "AzureServices"
+  }
 }
 
 resource "azurerm_role_assignment" "terraform_kv_admin" {
@@ -23,8 +29,10 @@ resource "azurerm_key_vault_secret" "entra_client_secret" {
 }
 
 resource "azurerm_key_vault_secret" "acr_password" {
+  count = local.create_acr ? 1 : 0
+
   name         = "acr-admin-password"
-  value        = azurerm_container_registry.this.admin_password
+  value        = azurerm_container_registry.this[0].admin_password
   key_vault_id = azurerm_key_vault.this.id
 
   depends_on = [azurerm_role_assignment.terraform_kv_admin]

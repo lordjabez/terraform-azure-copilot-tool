@@ -47,6 +47,11 @@ def _get_static_env_vars() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
+def _get_container_tags() -> dict[str, str]:
+    return json.loads(os.environ.get("CONTAINER_TAGS", "{}"))
+
+
+@lru_cache(maxsize=1)
 def _get_obo_scopes() -> list[str]:
     return [s.strip() for s in os.environ["OBO_SCOPES"].split(",")]
 
@@ -112,7 +117,7 @@ def _create_ephemeral_container(obo_token: str, request_body: str) -> str:
                 password=os.environ["ACR_PASSWORD"],
             )
         ],
-        tags={"created_at": now.isoformat()},
+        tags={**_get_container_tags(), "created_at": now.isoformat()},
     )
 
     _get_aci_client().container_groups.begin_create_or_update(

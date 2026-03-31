@@ -7,11 +7,12 @@ resource "azurerm_container_group" "persistent" {
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
+  tags                = var.tags
 
   image_registry_credential {
-    server   = azurerm_container_registry.this.login_server
-    username = azurerm_container_registry.this.admin_username
-    password = azurerm_container_registry.this.admin_password
+    server   = local.acr_login_server
+    username = local.acr_username
+    password = local.acr_password
   }
 
   container {
